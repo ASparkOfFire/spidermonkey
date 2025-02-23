@@ -74,6 +74,7 @@
 #endif
 
 #include "builtin/Array.h"
+#include "builtin/DataViewObject.h"  // For DataView support
 #include "builtin/MapObject.h"
 #include "builtin/ModuleObject.h"
 #include "builtin/RegExp.h"
@@ -182,6 +183,7 @@
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/ArrayBufferObject.h"  // For ArrayBufferObject::dataPointer()
 #include "vm/Compression.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
@@ -3382,6 +3384,86 @@ static bool PutStr(JSContext* cx, unsigned argc, Value* vp) {
     fflush(gOutFile->fp);
   }
 
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool MyWriteBytes(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (!gOutFile->isOpen()) {
+    JS_ReportErrorASCII(cx, "Output file is closed");
+    return false;
+  }
+
+  if (args.length() != 1 || !args[0].isObject()) {
+    JS_ReportErrorASCII(
+        cx, "Expected a single argument of type TypedArray or DataView");
+    return false;
+  }
+
+  RootedObject obj(cx, &args[0].toObject());
+
+  // Case 1: The argument is a TypedArray.
+  if (obj->is<TypedArrayObject>()) {
+    // In the current API, the common methods for retrieving the inline
+    // data are defined on FixedLengthTypedArrayObject. So we require that
+    // the object is a fixed-length typed array.
+    if (!IsFixedLengthTypedArrayClass(obj->getClass())) {
+      JS_ReportErrorASCII(cx, "Only fixed-length TypedArray supported");
+      return false;
+    }
+    FixedLengthTypedArrayObject* fta = &obj->as<FixedLengthTypedArrayObject>();
+    // Retrieve the pointer to the inline data.
+    const uint8_t* data = fta->elements();
+    // Get the byte length (which is computed as length * bytesPerElement).
+    size_t size = fta->byteLength();
+    fwrite(data, sizeof(uint8_t), size, gOutFile->fp);
+  }
+  // Case 2: The argument is a DataView.
+  else if (obj->is<DataViewObject>()) {
+    DataViewObject* dv = &obj->as<DataViewObject>();
+
+    // Get the underlying ArrayBuffer
+    ArrayBufferObjectMaybeShared* buffer = dv->bufferEither();
+    if (!buffer) {
+      JS_ReportErrorASCII(cx, "DataView has no buffer");
+      return false;
+    }
+
+    // For DataView, we need to handle the Maybe<size_t> return values
+    mozilla::Maybe<size_t> maybeLength = dv->byteLength();
+    if (!maybeLength) {
+      JS_ReportErrorASCII(cx, "DataView is detached or out-of-bounds");
+      return false;
+    }
+    size_t size = maybeLength.value();
+
+    mozilla::Maybe<size_t> maybeOffset = dv->byteOffset();
+    if (!maybeOffset) {
+      JS_ReportErrorASCII(cx, "DataView is detached or out-of-bounds");
+      return false;
+    }
+    size_t offset = maybeOffset.value();
+
+    // Get the base pointer from the viewed ArrayBuffer
+    const uint8_t* base;
+    if (buffer->is<ArrayBufferObject>()) {
+      base = buffer->as<ArrayBufferObject>().dataPointer();
+    } else {
+      // Handle SharedArrayBufferObject case
+      JS_ReportErrorASCII(cx, "SharedArrayBuffer not yet supported");
+      return false;
+    }
+
+    const uint8_t* data = base + offset;
+    fwrite(data, sizeof(uint8_t), size, gOutFile->fp);
+  } else {
+    JS_ReportErrorASCII(cx, "Expected argument of type TypedArray or DataView");
+    return false;
+  }
+
+  fflush(gOutFile->fp);
   args.rval().setUndefined();
   return true;
 }
@@ -9767,6 +9849,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("putstr", PutStr, 0, 0,
 "putstr([exp])",
 "  Evaluate and print expression without newline."),
+
+    JS_FN_HELP("writebytes", MyWriteBytes, 0, 0,
+"writebytes(DataView)",
+" Dump bytes of DataView to stdout"),
 
     JS_FN_HELP("dateNow", Now, 0, 0,
 "dateNow()",
