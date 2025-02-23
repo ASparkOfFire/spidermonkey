@@ -1,0 +1,5 @@
+[DEFAULT]
+firefox-appdir = "browser"
+skip-if = ["os == 'android'"] # bug 1730213
+
+["test_AboutNewTab.js"]

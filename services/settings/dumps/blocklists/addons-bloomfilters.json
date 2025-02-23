@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "schema": 1739277368345,
+      "attachment": {
+        "hash": "2456074c5ca73b46f67d552580e82f5da8ea6cc524cb09d283a036936d793173",
+        "size": 852137,
+        "filename": "filter.bin",
+        "location": "staging/addons-bloomfilters/b8643575-1c88-433b-9259-3c864e435916.bin",
+        "mimetype": "application/octet-stream"
+      },
+      "key_format": "{guid}:{version}",
+      "attachment_type": "bloomfilter-base",
+      "generation_time": 1739466275950,
+      "id": "88946e64-c81a-42f1-9021-c608fce0b47f",
+      "last_modified": 1739466430719
+    },
+    {
+      "schema": 1739466428648,
+      "attachment": {
+        "hash": "842edc3cf92a5d32b0d08c94eeaec1152c16d191aebdfe574e8289465e6153e3",
+        "size": 9351,
+        "filename": "filter.bin",
+        "location": "staging/addons-bloomfilters/2c9dd046-c9a0-460b-8ba8-28e08cda4097.bin",
+        "mimetype": "application/octet-stream"
+      },
+      "key_format": "{guid}:{version}",
+      "attachment_type": "softblocks-bloomfilter-base",
+      "generation_time": 1739466275950,
+      "id": "08cd99e5-afd1-4cf6-bd52-ae4f67298c0a",
+      "last_modified": 1739466430716
+    }
+  ],
+  "timestamp": 1739466430719
+}
