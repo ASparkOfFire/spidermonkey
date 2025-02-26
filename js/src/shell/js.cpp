@@ -3388,6 +3388,113 @@ static bool PutStr(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool MyReadBytes(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (args.length() != 2 || !args[0].isObject() || !args[1].isNumber()) {
+    JS_ReportErrorASCII(cx,
+                        "Expected two arguments: TypedArray/DataView and "
+                        "number of bytes to read");
+    return false;
+  }
+
+  // Get the number of bytes to read
+  uint32_t bytesToRead;
+  if (!JS::ToUint32(cx, args[1], &bytesToRead)) {
+    JS_ReportErrorASCII(
+        cx, "Second argument must be a valid number of bytes to read");
+    return false;
+  }
+
+  RootedObject obj(cx, &args[0].toObject());
+
+  size_t bytesRead = 0;
+
+  // Case 1: The argument is a TypedArray
+  if (obj->is<TypedArrayObject>()) {
+    // In the current API, the common methods for retrieving the inline
+    // data are defined on FixedLengthTypedArrayObject. So we require that
+    // the object is a fixed-length typed array.
+    if (!IsFixedLengthTypedArrayClass(obj->getClass())) {
+      JS_ReportErrorASCII(cx, "Only fixed-length TypedArray supported");
+      return false;
+    }
+
+    FixedLengthTypedArrayObject* fta = &obj->as<FixedLengthTypedArrayObject>();
+
+    // Get a pointer to the data
+    uint8_t* data = fta->elements();
+
+    // Get the byte length of the typed array
+    size_t bufferSize = fta->byteLength();
+
+    // Check if the buffer is large enough
+    if (bytesToRead > bufferSize) {
+      JS_ReportErrorASCII(
+          cx, "TypedArray is not large enough for requested read size");
+      return false;
+    }
+
+    // Read data from stdin
+    bytesRead = fread(data, sizeof(uint8_t), bytesToRead, stdin);
+  }
+  // Case 2: The argument is a DataView
+  else if (obj->is<DataViewObject>()) {
+    DataViewObject* dv = &obj->as<DataViewObject>();
+
+    // Get the underlying ArrayBuffer
+    ArrayBufferObjectMaybeShared* buffer = dv->bufferEither();
+    if (!buffer) {
+      JS_ReportErrorASCII(cx, "DataView has no buffer");
+      return false;
+    }
+
+    // For DataView, we need to handle the Maybe<size_t> return values
+    mozilla::Maybe<size_t> maybeLength = dv->byteLength();
+    if (!maybeLength) {
+      JS_ReportErrorASCII(cx, "DataView is detached or out-of-bounds");
+      return false;
+    }
+    size_t bufferSize = maybeLength.value();
+
+    // Check if the buffer is large enough
+    if (bytesToRead > bufferSize) {
+      JS_ReportErrorASCII(
+          cx, "DataView is not large enough for requested read size");
+      return false;
+    }
+
+    mozilla::Maybe<size_t> maybeOffset = dv->byteOffset();
+    if (!maybeOffset) {
+      JS_ReportErrorASCII(cx, "DataView is detached or out-of-bounds");
+      return false;
+    }
+    size_t offset = maybeOffset.value();
+
+    // Get the base pointer from the viewed ArrayBuffer
+    uint8_t* base;
+    if (buffer->is<ArrayBufferObject>()) {
+      base = buffer->as<ArrayBufferObject>().dataPointer();
+    } else {
+      // Handle SharedArrayBufferObject case
+      JS_ReportErrorASCII(cx, "SharedArrayBuffer not yet supported");
+      return false;
+    }
+
+    uint8_t* data = base + offset;
+
+    // Read data from stdin
+    bytesRead = fread(data, sizeof(uint8_t), bytesToRead, stdin);
+  } else {
+    JS_ReportErrorASCII(cx, "Expected argument of type TypedArray or DataView");
+    return false;
+  }
+
+  // Return the number of bytes actually read
+  args.rval().setNumber(double(bytesRead));
+  return true;
+}
+
 static bool MyWriteBytes(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -9853,6 +9960,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("writebytes", MyWriteBytes, 0, 0,
 "writebytes(DataView)",
 " Dump bytes of DataView to stdout"),
+
+    JS_FN_HELP("readbytes", MyReadBytes, 2, 0,
+"readbytes(DataView, bytesToRead)",
+" Reads specified number of bytes from stdin into DataView. Returns number of bytes read."),
 
     JS_FN_HELP("dateNow", Now, 0, 0,
 "dateNow()",
